@@ -75,9 +75,7 @@ class GitHubXChecker:
     async def search_repositories(self, search_query, page=1):
         try:
             # Navigate to GitHub
-            search_url = (
-                f"https://github.com/search?q={search_query}&ref=advsearch&p={page}"
-            )
+            search_url = f"https://github.com/search?q={search_query}&ref=advsearch&type=repositories&p={page}"
             await self.page.goto(search_url, {"waitUntil": "networkidle0"})
             await self.check_429_error(search_url, self.page)
 
@@ -85,10 +83,17 @@ class GitHubXChecker:
             logger.error(f"Error during search: {str(e)}")
             raise
 
-    async def check_429_error(self, url, page: Page):
+    async def check_429_error(self, url, page: Page, anti_el_xpath: str = ""):
         has_429 = await page.evaluate(
             "() => (document.body.textContent.includes('Error') && document.body.textContent.includes('429')) || document.body.textContent.includes('Whoa there!')"
         )
+
+        if anti_el_xpath:
+            has_anti_el = await page.xpath(anti_el_xpath)
+            if len(has_anti_el) > 0:
+                logger.error(f"Anti-el found, continuing")
+                return
+
         sleep_time = 2
         counter = 0
 
@@ -100,6 +105,13 @@ class GitHubXChecker:
             has_429 = await page.evaluate(
                 "() => (document.body.textContent.includes('Error') && document.body.textContent.includes('429')) || document.body.textContent.includes('Whoa there!')"
             )
+
+            if anti_el_xpath:
+                has_anti_el = await page.xpath(anti_el_xpath)
+                if len(has_anti_el) > 0:
+                    logger.error(f"Anti-el found, continuing")
+                    return
+
             counter += 1
 
             if counter > 10:
@@ -139,7 +151,9 @@ class GitHubXChecker:
                             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                         )
                         await new_page.goto(repo_url, {"waitUntil": "networkidle0"})
-                        await self.check_429_error(repo_url, new_page)
+                        await self.check_429_error(
+                            repo_url, new_page, '//a[@rel="author"]'
+                        )
 
                         # Wait for author link to be visible
                         await new_page.waitForSelector(
